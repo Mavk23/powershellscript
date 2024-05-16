@@ -1,0 +1,93 @@
+
+# najpierw to zaloguj się do PNPSharepointOnline
+
+
+# wez plik csv z exportem z SP 
+
+$csvFilePath = "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany\splistaplikow.csv"
+$data = Import-Csv -Path $csvFilePath
+$pdfRecords = $data | Where-Object { $_.FileType -eq "pdf" }
+# $pdfRecords
+
+
+$tempPath = "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany"
+
+# Iteracja przez każdy rekord $pdfRecords
+foreach ($record in $pdfRecords) {
+    $url = "https://globalworthpl.sharepoint.com"+ $record.RelativeURL
+    $fileName = $record.Name + ".pdf"  # Użyj wartości z kolumny "Name" jako nazwy pliku
+    $tempFilePath = Join-Path -Path $tempPath -ChildPath $fileName
+    
+    # Pobieranie pliku
+    Invoke-WebRequest -Uri $url -OutFile $tempFilePath
+}
+
+
+
+
+######
+
+
+$csvFilePath = "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany\splistaplikowutf8.csv"
+ $data = Import-Csv -Path $csvFilePath -Delimiter ";" -Encoding utf8
+$pdfRecords = $data | Where-Object { $_.FileType -eq "pdf" }
+
+$tempPath = "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany"
+$outputCSVPath = "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany\validation_results.csv"
+
+# Iteracja przez każdy rekord $pdfRecords
+foreach ($record in $pdfRecords) {
+   
+    # $url = "https://globalworthpl.sharepoint.com" + $record.RelativeURL
+
+    $url = $record.RelativeURL.Substring(21)
+
+    $fileName = $record.name + ".pdf" # Użyj wartości z kolumny "Name" jako nazwy pliku
+    $tempFilePath = Join-Path -Path $tempPath -ChildPath $fileName
+    
+    # Pobieranie pliku ogolnie nie poprawne pobieranie
+    Get-PnPFile -Url $url -Path $tempPath -AsFile -Filename $fileName
+
+    Start-Sleep -Seconds 3
+    
+    # Walidacja skryptem pierwszym
+    $pythonOutput = Invoke-Expression "C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany\whosign_val.py $fileName "
+    if ($null -eq $pythonOutput) {
+        $pythonOutput = & 'C:\Users\mprzybysz\Downloads\vpodpiskwalifikowany\whosign_val.py' $fileName 2>&1
+    }
+    
+$result = ""
+
+if ($pythonOutput -match "- common name: Minister do spraw informatyzacji - pieczec podpisu zaufanego") {
+    $result = "znaleziono podpis zaufany"
+}
+elseif ($pythonOutput -match "AttributeError: 'NoneType' object has no attribute 'values'") {
+    $result = "brak podpisow cyfrowych"
+}
+elseif ($pythonOutput -match "TypeError:") {
+    $result = "error podpisow"
+}
+else {
+    $result = "znaleziono podpis cyfrowy"
+}
+
+
+    
+    # Dodanie wyników do pliku CSV
+   $resultObject = New-Object PSObject -Property @{
+        "ValidationResult" = $result
+        "FileName" = $fileName
+        "RelativeURL" = $record.RelativeURL
+        "id" = $record.id
+    }
+
+   $resultObject | Export-Csv -Path $outputCSVPath -Append -NoTypeInformation
+
+  
+  
+  Remove-Item $tempFilePath -Force
+
+  $pythonOutput = ""
+}
+
+
