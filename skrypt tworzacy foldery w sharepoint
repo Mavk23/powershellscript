@@ -1,0 +1,271 @@
+# skrypt do tworzenia struktury folderow na witrynie Documentation 
+
+# skrypt korzysta z pliku txt to towrzenia struktury 
+
+folderkiGWT.txt : 
+Folder,SubFolder
+FLX,FUN
+FLX,MAR
+FLX,FIN
+FLX,ADM
+FLX,LEA
+FLX,OPT
+FLX,WKP
+FLX,LEG
+FLX,OPX
+FLX,PoA
+
+
+
+# ps 7.0 !!!
+
+
+$Site = 'Documentation'
+$List = 'Documentation'
+$SiteURL = "https://globalworthpl.sharepoint.com/sites/$Site" 
+$TenantID = '6df479e7-776f-4d6f-a1e9-ef1e31843fa1'
+
+#$SiteURL = "https://706t3y.sharepoint.com/sites/$Site" 
+#$TenantID = '840adafc-8aa0-467e-98e9-8ce3ee02ff75'
+
+
+Connect-PnPOnline -Url $SiteURL -Interactive
+#Install-Module AzureAd -Scope CurrentUser
+#import-module "C:\Users\tzielinski\OneDrive - GPRE MANAGEMENT SPÓŁKA Z O. O\Dokumenty\PowerShell\Modules\AzureAD\2.0.2.182\AzureAD.psd1" -UseWindowsPowerShell
+
+Install-Module PnP.PowerShell -Scope CurrentUser -Force
+Import-Module PnP.PowerShell
+
+Install-Module AzureAd -Scope CurrentUser -Force
+Import-Module AzureAD -UseWindowsPowerShell
+
+
+
+Connect-AzureAD -TenantId $TenantID
+
+
+$Folderki = Import-Csv "C:\Users\mprzybysz\Downloads\folderkiGWT.txt" -Delimiter ','
+
+Function Add-Folders {
+    param ($Folderki)
+   
+    $CreatedFolders = $null
+    $CreatedFolders = @()
+   
+    #Create first folder
+    ForEach ($Folder in $Folderki) {
+        if ($CreatedFolders -notcontains $Folder.Folder) {
+            write-host "Create $($Folder.Folder)"
+            try {
+                Add-PnPFolder -Name $Folder.Folder -Folder "$List" -ErrorAction Stop
+            }
+            catch {
+                write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+            }
+            finally {
+                $CreatedFolders += $Folder.Folder
+            }
+        }
+    }
+    #Create subfolders
+    ForEach ($Folder in $Folderki) {
+        write-host "Create $($Folder.Folder)\$($Folder.SubFolder)"
+        try {
+            Add-PnPFolder -Name $Folder.SubFolder -Folder "$List/$($Folder.Folder)" -ErrorAction Stop
+        }
+        catch {
+            write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+        }
+        #Create Draft folder
+        write-host "Create $($Folder.Folder)\$($Folder.SubFolder)\Draft"
+        try {
+            Add-PnPFolder -Name 'Draft' -Folder "$List/$($Folder.Folder)/$($Folder.SubFolder)" -ErrorAction Stop
+        }
+        catch {
+            write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+        }
+    }
+}
+
+Function Add-AzureSecurityGroups {
+    param ($Folderki)
+    $CreatedFolders = $null
+    $CreatedFolders = @()
+   
+    #Create first folder Azure Groups
+    ForEach ($Folder in $Folderki) {
+        if ($CreatedFolders -notcontains $Folder.Folder) {
+            write-host "Create Group: $Site.$($Folder.Folder).L"
+            if ( $(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).L" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).L"}).count -eq 0) {
+                try {
+                    New-AzureADGroup -Description "View items in lists and documents in document libraries: $Site\$($Folder.Folder)" -DisplayName "$Site.$($Folder.Folder).L" -MailEnabled $false -SecurityEnabled $true -MailNickName "$Site.$($Folder.Folder).L" -ErrorAction Stop
+                }
+                catch {
+                    write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+                }
+                finally {
+                    $CreatedFolders += $Folder.Folder
+                }
+            }
+            else {
+                write-host "Grupa: $Site.$($Folder.Folder).L juz istnieje"
+            }
+        }
+    }
+    #Create subfolders Azure Groups
+    ForEach ($Folder in $Folderki) {
+        write-host "Create Group: $Site.$($Folder.Folder).$($Folder.SubFolder).RW"
+        if ( $(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).$($Folder.SubFolder).RW"}).count -eq 0) {
+            try {
+                New-AzureADGroup -Description "Read and Write access to lists and documents: $Site\$($Folder.Folder)\$($Folder.SubFolder)" -DisplayName "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" -MailEnabled $false -SecurityEnabled $true -MailNickName "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" -ErrorAction Stop
+            }
+            catch {
+                write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+            }
+        }
+        else {
+            write-host "Grupa: $Site.$($Folder.Folder).$($Folder.SubFolder).RW juz istnieje"
+        }
+    }
+}
+
+Function Set-FoldersPremissions {
+ param ($Folderki)
+   
+    $CreatedFolders = $null
+    $CreatedFolders = @()
+   
+    #Set first folder permissions
+    ForEach ($Folder in $Folderki) {
+        if ($CreatedFolders -notcontains $Folder.Folder) {
+            write-host "Set Permission to folder $($Folder.Folder)"
+            try {
+                Set-PnPFolderPermission -List "$List" -Identity "$List/$($Folder.Folder)" -User "c:0t.c|tenant|$($(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).L" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).L"}).ObjectId)" -AddRole 'List' -ClearExisting -ErrorAction Stop
+            }
+            catch {
+                write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+            }
+            finally {
+                $CreatedFolders += $Folder.Folder
+            }
+        }
+    }
+    #Create subfolders permissions
+    ForEach ($Folder in $Folderki) {
+        write-host "Set Permission to folder $($Folder.Folder)\$($Folder.SubFolder)"
+        try {
+            Set-PnPFolderPermission -List "$List" -Identity "$List/$($Folder.Folder)/$($Folder.SubFolder)" -User "c:0t.c|tenant|$($(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).$($Folder.SubFolder).RW"}).ObjectId)" -AddRole 'List' -ClearExisting -ErrorAction Stop
+        }
+        catch {
+            write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+        }
+
+        #Draft
+        write-host "Set Permission to folder $($Folder.Folder)\$($Folder.SubFolder)\Draft"
+        try {
+            Set-PnPFolderPermission -List "$List" -Identity "$List/$($Folder.Folder)/$($Folder.SubFolder)/Draft" -User "c:0t.c|tenant|$($(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).$($Folder.SubFolder).RW"}).ObjectId)" -AddRole 'Edit' -ClearExisting -ErrorAction Stop
+        }
+        catch {
+            write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+        }
+    }
+}
+
+Function Add-FilesToSharepoint {
+    param (
+        $LocalFolderPath,
+        $TargetFolderURL
+    )
+ 
+    #Function to upload all files from a local folder to SharePoint Online Folder
+    Function Upload-PnPFolder($LocalFolderPath, $TargetFolderURL)
+    {
+        Write-host "Processing Folder:"$LocalFolderPath -f Yellow
+        #Get All files and SubFolders from the local disk
+        $Files = Get-ChildItem -Path $LocalFolderPath -File
+ 
+        #Ensure the target folder
+        Resolve-PnPFolder -SiteRelativePath $TargetFolderURL | Out-Null
+ 
+        #Upload All files from the local folder to SharePoint Online Folder
+        ForEach ($File in $Files)
+        {
+            Add-PnPFile -Path "$($File.Directory)\$($File.Name)" -Folder $TargetFolderURL -Values @{"Title" = $($File.Name)} | Out-Null
+            Write-host "`tUploaded File:"$File.FullName -f Green
+        }
+    }
+    #Call the function to upload the Root Folder
+    Upload-PnPFolder -LocalFolderPath $LocalFolderPath -TargetFolderURL $TargetFolderURL
+ 
+    #Get all Folders from given source path
+    Get-ChildItem -Path $LocalFolderPath -Recurse -Directory | ForEach-Object {
+        $FolderToUpload = ($TargetFolderURL+$_.FullName.Replace($LocalFolderPath,[string]::Empty)).Replace("\","/")
+        Upload-PnPFolder -LocalFolderPath $_.FullName -TargetFolderURL $FolderToUpload
+    }
+}
+
+Function Add-GroupToGroup {
+    param ($Folderki)
+    ForEach ($Folder in $Folderki) {
+        write-host "Add Group: ""$Site.$($Folder.Folder).$($Folder.SubFolder).RW"" to Group: ""$Site.$($Folder.Folder).L"""
+        try {
+            Add-AzureADGroupMember -ObjectId $(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).L" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).L"}).ObjectId -RefObjectId $(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).$($Folder.SubFolder).RW" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).$($Folder.SubFolder).RW"}).ObjectId -ErrorAction Stop
+        }
+        catch {
+            write-host "Error: $($Error[0].Exception.Message)" -Foreground Red
+        }
+    }
+}
+
+Function Add-ListGroupsToGroup {
+    param ($Folderki)
+    
+    $CreatedFolders = $null
+    $CreatedFolders = @()
+    
+    ForEach ($Folder in $Folderki) {
+        $GroupID = $(Get-PnPGroup -Identity 'Documentation Visitors').Id
+        if ($CreatedFolders -notcontains $Folder.Folder) {
+            write-host "Add Group: ""$Site.$($Folder.Folder).L"" to Group: ""Documentation Visitors"""
+            try {
+                Add-PnPGroupMember -LoginName "c:0t.c|tenant|$($(Get-AzureADGroup -SearchString "$Site.$($Folder.Folder).L" | where-object {$_.DisplayName -eq "$Site.$($Folder.Folder).L"}).ObjectId)" -group $GroupID 
+            }
+            catch {
+                write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+            }
+            finally {
+                $CreatedFolders += $Folder.Folder
+            }
+        }
+    }
+}
+
+Function Add-NewSubFolder {
+    param (
+        $Site,
+        $Folder,
+        $SubFolder,
+        $LastFolder
+    )
+
+    write-host "Create $List/$Folder/$SubFolder/$LastFolder"
+    try {
+        Add-PnPFolder -Name $LastFolder -Folder "$List/$Folder/$SubFolder" -ErrorAction Stop
+    }
+    catch {
+        write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+    }
+    write-host "Set Permissions on $List/$Folder/$SubFolder/$LastFolder"
+    try {
+        Set-PnPFolderPermission -List "$List" -Identity "$List/$Folder/$SubFolder/$LastFolder" -User "c:0t.c|tenant|$($(Get-AzureADGroup -SearchString "$Site.$Folder.$SubFolder.RW" | where-object {$_.DisplayName -eq "$Site.$Folder.$SubFolder.RW"}).ObjectId)" -AddRole 'Write' -ClearExisting -ErrorAction Stop
+    }
+    catch {
+        write-host "$($Error[0].ErrorDetails.Message)" -Foreground Red
+    }
+}
+
+Add-AzureSecurityGroups -Folderki $Folderki
+Add-Folders -Folderki $Folderki
+Set-FoldersPremissions -Folderki $Folderki
+Add-GroupToGroup -Folderki $Folderki
+Add-ListGroupsToGroup -Folderki $Folderki
