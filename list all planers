@@ -1,0 +1,48 @@
+
+#Install-Module Microsoft.Graph -Scope CurrentUser
+
+# Zaloguj się do Microsoft Graph
+Connect-MgGraph -Scopes "Group.Read.All, Group.ReadWrite.All"
+
+# Pobierz wszystkie grupy (każda grupa może mieć planery)
+$groups = Get-MgGroup -ConsistencyLevel eventual -CountVariable count -All -Property Id, DisplayName
+
+
+#filtruj jedna grupe tylko 
+
+# Filtruj grupy, aby znaleźć grupę o nazwie 'mojagrupasharrepoint'
+#$filteredGroups = $groups | Where-Object { $_.DisplayName -eq "mprzybysz" }
+
+# Lista do przechowywania wyników
+$results = @()
+
+# Wylistuj wszystkie planery dla każdej grupy
+foreach ($group in $groups) {
+    Write-Output "Przetwarzanie grupy: $($group.DisplayName) (ID: $($group.Id))"
+
+    try {
+        $plans = Get-MgGroupPlannerPlan -GroupId $group.Id
+        foreach ($plan in $plans) {
+            $results += [PSCustomObject]@{
+                GroupName = $group.DisplayName
+                GroupId = $group.Id
+                PlanName = $plan.Title
+                PlanId = $plan.Id
+            }
+        }
+    }
+    catch {
+        $results += [PSCustomObject]@{
+            GroupName = $group.DisplayName
+            GroupId = $group.Id
+            PlanName = "No plans found or unable to retrieve plans"
+            PlanId = "N/A"
+        }
+    }
+}
+
+# Zapisz wyniki do pliku CSV
+$results | Export-Csv -Path "C:\Users\mprzybysz\Downloads\Planery.csv" -NoTypeInformation -Encoding UTF8
+
+# Wyloguj się z Microsoft Graph
+Disconnect-MgGraph
